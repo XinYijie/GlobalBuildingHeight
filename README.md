@@ -1,5 +1,5 @@
 # GlobalBuildingHeight
-Data collection and processing script on Google Earth Engine
+The project is about the data collection and prepocessing scripts on Google Earth Engine Source of estimating global 30 meters spatiotemporal 3D urban expansion dataset from 1990 to 2010.
 
 
 ## Data Availability
