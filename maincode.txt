@@ -1,0 +1,125 @@
+
+var dem = ee.Image("NASA/NASADEM_HGT/001"),
+    dsms = ee.ImageCollection("JAXA/ALOS/AW3D30/V3_2"),
+    isas = ee.ImageCollection("projects/tthe2011/assets/GAIA1992_2018_gs");
+var grid5 = ee.FeatureCollection("users/tingtinghe2011/00GridZone/WorldLandgrid5");
+var bui10 = ee.Image("DLR/WSF/WSF2015/v1");
+var grip4_africa = ee.FeatureCollection("projects/sat-io/open-datasets/GRIP4/Africa"), 
+  grip4_central_south_america = ee.FeatureCollection("projects/sat-io/open-datasets/GRIP4/Central-South-America"),
+  grip4_europe = ee.FeatureCollection("projects/sat-io/open-datasets/GRIP4/Europe"), 
+  grip4_north_america = ee.FeatureCollection("projects/sat-io/open-datasets/GRIP4/North-America"), 
+  grip4_oceania = ee.FeatureCollection("projects/sat-io/open-datasets/GRIP4/Oceania"), 
+  grip4_south_east_asia = ee.FeatureCollection("projects/sat-io/open-datasets/GRIP4/South-East-Asia"), 
+  grip4_middle_east_central_asia = ee.FeatureCollection("projects/sat-io/open-datasets/GRIP4/Middle-East-Central-Asia");
+
+var grips = grip4_africa.merge(grip4_central_south_america).merge(grip4_europe).merge(grip4_north_america)
+    .merge(grip4_oceania).merge(grip4_south_east_asia).merge(grip4_middle_east_central_asia);
+
+
+var foldname = 'GlobalBuildingHeight5';
+
+
+// ================
+// ================
+// ================
+{
+  var grid = grid5.filterBounds(isas.geometry(0.01));
+  ids.evaluate(function(list){
+    list.forEach(function(value){
+      generateImg(value);
+    });
+  });
+}
+
+
+// ----
+function generateImg(value){
+  var geo = grid.filter(ee.Filter.eq('id', value)).geometry(0.01);
+  
+  var isaimg = isas.filterBounds(geo).mosaic().clip(geo);
+  var isamask = isaimg.gte(9);
+  
+  var elevimg = dsms.select('DSM').filterBounds(geo).mosaic().clip(geo);
+  var slopeimg = ee.Terrain.slope(dem.select('elevation').clip(geo));
+  
+  var kernal = ee.Kernel.gaussian(30, 30, 'meters');
+  var minMax1 = elevimg.reduceNeighborhood(ee.Reducer.minMax(), kernal);
+  var height1 = minMax1.select('DSM_max').subtract(minMax1.select('DSM_min')).rename('nd');
+  
+  var minMax2 = minMax1.select('DSM_min').reduceNeighborhood(ee.Reducer.minMax(), kernal);
+  var height2 = minMax2.select('DSM_min_max').subtract(minMax2.select('DSM_min_min')).rename('nd');
+  
+  var hei1 = height1.updateMask(slopeimg.lt(10)).rename('nd').int();
+  var hei2 = height1.subtract(height2).updateMask(slopeimg.gte(10)).rename('nd').int();
+  var heifin = ee.ImageCollection([hei1, hei2]).max().int()
+                 .updateMask(isamask)
+                 .reproject('EPSG:4326', null, 30)
+                 .clip(geo);
+  var fin_img = generate_final_img(heifin);
+  exportImgAsset(heifin, foldname, value.toString(), geo, 30,  'EPSG:4326');
+}
+
+
+function generate_final_img(bui_img){
+  var geo = bui_img.geometry(0.01);
+  
+  var roads = grips.filterBounds(geo);
+    roads = roads.map(function(fea){
+    var level = fea.getNumber('GP_RTP');
+    var value = ee.Algorithms.If(level.eq(1), 6.5, ee.Algorithms.If(level.eq(2), 5, ee.Algorithms.If(level.eq(3), 4, 3)));
+    return fea.buffer(ee.Number(value));
+  });
+  
+  var roadimg = feasToImagevalue(roads, 1, 'nd');
+  var mask = bui_img.gt(2).and(roadimg.unmask().not()).and(bui10.gt(0));
+  var bui_fin = bui_img.updateMask(mask).reproject('EPSG:4326', null, 10);
+  
+  // ----
+  var isaimg = isas.filterBounds(geo).mosaic();
+  isaimg = isaimg.updateMask(isaimg.gte(9)).reproject('EPSG:4326', null, 10).updateMask(bui_fin);
+  isaimg = isaimg.multiply(-1).add(2019).clip(geo);
+  // Map.addLayer(isaimg.randomVisualizer(), null, 'isaimg');
+  
+  var fin_img = bui_fin.rename('height').addBands(isaimg.rename('year')).clip(geo);
+  fin_img = fin_img.set('type', 'final').set('id', id.slice(2));
+  return fin_img;
+}
+
+
+function feasToImagevalue(feas, value, bandname){
+  value = value || 1;
+  bandname = bandname || 'nd';
+  feas = feas.map(function(fea){return fea.set('nd', value)});
+  return  feas.filter(ee.Filter.neq('nd', null))
+              .reduceToImage({
+                properties: ['nd'],
+                reducer: ee.Reducer.first()
+              }).rename(bandname);
+}
+
+function exportImgAsset(img, foldname, filename, roi, sca, crscrs, pre){
+  pre = pre || '';
+  filename = filename || 'imgout';
+  filename = pre + filename;
+  var taskname =  filename;
+  if(foldname===null){
+  }else {
+    filename = foldname + '/' + filename;
+  }
+  img = ee.Image(img);
+  Export.image.toAsset({
+    image: ee.Image(img),
+    description:taskname, 
+    assetId: filename || img.id().getInfo(),
+    region: roi || img.geometry(),
+    scale: sca || img.select([0]).projection().nominalScale().getInfo(),
+    crs: crscrs|| 'EPSG:4326',
+    maxPixels:1e13
+  });
+}
+
+
+
+
+
+
