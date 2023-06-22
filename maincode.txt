@@ -1,7 +1,7 @@
 
 var dem = ee.Image("NASA/NASADEM_HGT/001"),
-    dsms = ee.ImageCollection("JAXA/ALOS/AW3D30/V3_2"),
-    isas = ee.ImageCollection("projects/tthe2011/assets/GAIA1992_2018_gs");
+    dsms = ee.ImageCollection("JAXA/ALOS/AW3D30/V3_2");
+var isas = ee.ImageCollection("projects/tthe2011/assets/GAIA_1985_2022");
 var grid5 = ee.FeatureCollection("users/tingtinghe2011/00GridZone/WorldLandgrid5");
 var bui10 = ee.Image("DLR/WSF/WSF2015/v1");
 var grip4_africa = ee.FeatureCollection("projects/sat-io/open-datasets/GRIP4/Africa"), 
@@ -77,7 +77,7 @@ function generate_final_img(bui_img){
   // ----
   var isaimg = isas.filterBounds(geo).mosaic();
   isaimg = isaimg.updateMask(isaimg.gte(9)).reproject('EPSG:4326', null, 10).updateMask(bui_fin);
-  isaimg = isaimg.multiply(-1).add(2019).clip(geo);
+  isaimg = isaimg.multiply(-1).add(2023).clip(geo);
   // Map.addLayer(isaimg.randomVisualizer(), null, 'isaimg');
   
   var fin_img = bui_fin.rename('height').addBands(isaimg.rename('year')).clip(geo);
@@ -117,9 +117,5 @@ function exportImgAsset(img, foldname, filename, roi, sca, crscrs, pre){
     maxPixels:1e13
   });
 }
-
-
-
-
 
 
